@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OG Cabs - Telangana</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet.js for mapping -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+            border-radius: 0 0.5rem 0.5rem 0;
+            z-index: 0;
+        }
+        .leaflet-marker-icon {
+            transition: transform 1s linear;
+        }
+        .vehicle-icon {
+            font-size: 28px;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        }
+        .md-flex-full-height {
+            display: flex;
+        }
+        @media (min-width: 768px) {
+            .md-flex-full-height > div {
+                height: auto;
+            }
+            #map-container {
+                height: 580px; /* Set a fixed height for the map container */
+            }
+            #map {
+                height: 100%;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-5xl mx-auto bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="md:flex md-flex-full-height">
+            <!-- Left Side: Booking Panel -->
+            <div class="md:w-1/2 p-6 md:p-8 flex flex-col">
+                <header class="mb-6">
+                    <h1 class="text-3xl font-bold text-gray-900">OG Cabs</h1>
+                    <p class="text-gray-600 mt-1">Your reliable ride across Telangana.</p>
+                </header>
+
+                <div class="space-y-4">
+                    <div>
+                        <label for="pickup" class="block text-sm font-medium text-gray-700 mb-1">Pickup Location</label>
+                        <select id="pickup" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"></select>
+                    </div>
+                    <div>
+                        <label for="dropoff" class="block text-sm font-medium text-gray-700 mb-1">Drop-off Location</label>
+                        <select id="dropoff" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"></select>
+                    </div>
+                     <div>
+                        <label for="vehicle-type" class="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
+                        <select id="vehicle-type" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"></select>
+                    </div>
+                    
+                    <div id="fare-estimate" class="p-3 bg-indigo-50 text-indigo-800 rounded-lg text-center">
+                        <span class="font-semibold">Estimated Fare:</span> ₹<span id="estimate-amount">0.00</span>
+                    </div>
+
+                    <button id="request-ride-btn" class="w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-300 ease-in-out transform hover:-translate-y-0.5 disabled:bg-indigo-400 disabled:cursor-not-allowed">
+                        Request Ride
+                    </button>
+                </div>
+
+                <div id="ride-status" class="mt-6 p-4 bg-gray-50 rounded-lg flex-grow overflow-y-auto h-48 md:h-auto">
+                    <h3 class="font-semibold text-gray-800 mb-2">Ride Status</h3>
+                    <div id="status-log" class="text-sm text-gray-600 space-y-2">
+                        <p>Welcome! Please select your trip details.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Map -->
+            <div class="md:w-1/2 bg-gray-200" id="map-container">
+                <div id="map"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // A collection of major landmarks and cities in Telangana with their coordinates.
+            const LOCATIONS = {
+                // Hyderabad
+                "Charminar, Hyderabad": [17.3616, 78.4747],
+                "Golconda Fort, Hyderabad": [17.3833, 78.4011],
+                "HITEC City, Hyderabad": [17.4478, 78.3769],
+                "RGIA Airport, Hyderabad": [17.2403, 78.4294],
+                "Secunderabad Station": [17.4399, 78.4983],
+                "Ramoji Film City": [17.2543, 78.6808],
+                // Warangal Area
+                "NIT Warangal": [17.9822, 79.5315],
+                "Warangal Railway Station": [17.9945, 79.6033],
+                "Kazipet Junction": [17.9699, 79.5002],
+                "Hanamkonda Bus Station": [18.0076, 79.5518],
+                "Thousand Pillar Temple": [18.0042, 79.5663],
+                "Warangal Fort": [17.9583, 79.6200],
+                // Other Major Locations
+                "Nizamabad": [18.6724, 78.0941],
+                "Karimnagar": [18.4386, 79.1288],
+                "Khammam": [17.2473, 80.1514],
+                "Yadadri Temple": [17.5885, 78.9443],
+                "Nagarjuna Sagar Dam": [16.5772, 79.3113],
+            };
+
+            // Defines the available vehicle types, their icons, and fare rates.
+            const VEHICLE_TYPES = {
+                'Bike': { name: 'Bike', icon: '🏍', rate: 7.00, base: 20.00, assignedIcon: '🏍' },
+                'Auto': { name: 'Auto', icon: '🛺', rate: 9.50, base: 30.00, assignedIcon: '🛺' },
+                'Sedan': { name: 'Sedan', icon: '🚗', rate: 12.50, base: 50.00, assignedIcon: '🚕' },
+                'SUV': { name: 'SUV', icon: '🚙', rate: 16.00, base: 70.00, assignedIcon: '🚙' },
+                'Bus': { name: 'Bus (Shuttle)', icon: '🚌', rate: 5.00, base: 40.00, assignedIcon: '🚌' },
+            };
+            const DRIVER_COUNT = 40;
+
+            // DOM elements
+            let map;
+            let drivers = [];
+            let pickupSelect = document.getElementById('pickup');
+            let dropoffSelect = document.getElementById('dropoff');
+            let vehicleSelect = document.getElementById('vehicle-type');
+            let requestBtn = document.getElementById('request-ride-btn');
+            let statusLog = document.getElementById('status-log');
+            let estimateAmountEl = document.getElementById('estimate-amount');
+            let pickupMarker, dropoffMarker;
+
+            // Initializes the application
+            function init() {
+                setupMap();
+                populateSelects();
+                spawnDrivers();
+                setInterval(animateDrivers, 2000); // Randomly move available drivers
+                requestBtn.addEventListener('click', handleRideRequest);
+                [pickupSelect, dropoffSelect, vehicleSelect].forEach(el => el.addEventListener('change', updateFareEstimate));
+                updateFareEstimate();
+            }
+
+            // Sets up the Leaflet map centered on Telangana.
+            function setupMap() {
+                map = L.map('map').setView([17.8, 78.9], 8);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+
+                // Create markers for pickup and dropoff locations
+                const pickupIcon = L.divIcon({ html: '<div class="text-3xl">📍</div>', iconSize: [30, 30] });
+                const dropoffIcon = L.divIcon({ html: '<div class="text-3xl">🏁</div>', iconSize: [30, 30] });
+
+                pickupMarker = L.marker([0, 0], { icon: pickupIcon }).addTo(map).bindPopup("Pickup Location");
+                dropoffMarker = L.marker([0, 0], { icon: dropoffIcon }).addTo(map).bindPopup("Drop-off Location");
+
+                // Initially hide them
+                pickupMarker.setOpacity(0);
+                dropoffMarker.setOpacity(0);
+            }
+
+            // Populates the dropdown menus with locations and vehicle types.
+            function populateSelects() {
+                const locationNames = Object.keys(LOCATIONS);
+                locationNames.forEach(name => {
+                    pickupSelect.innerHTML += `<option value="${name}">${name}</option>`;
+                    dropoffSelect.innerHTML += `<option value="${name}">${name}</option>`;
+                });
+                dropoffSelect.selectedIndex = 1;
+
+                Object.keys(VEHICLE_TYPES).forEach(key => {
+                    const vehicle = VEHICLE_TYPES[key];
+                    vehicleSelect.innerHTML += `<option value="${key}">${vehicle.icon} ${vehicle.name}</option>`;
+                });
+            }
+            
+            // Appends a status message to the ride status log.
+            function logStatus(message, type = 'info') {
+                const p = document.createElement('p');
+                p.textContent = message;
+                if (type === 'success') p.className = 'text-green-600 font-semibold';
+                if (type === 'error') p.className = 'text-red-600 font-semibold';
+                statusLog.appendChild(p);
+                statusLog.scrollTop = statusLog.scrollHeight;
+            }
+
+            // Creates and places random drivers on the map.
+            function spawnDrivers() {
+                const vehicleKeys = Object.keys(VEHICLE_TYPES);
+                for (let i = 0; i < DRIVER_COUNT; i++) {
+                    const vehicleTypeKey = vehicleKeys[Math.floor(Math.random() * vehicleKeys.length)];
+                    const vehicle = VEHICLE_TYPES[vehicleTypeKey];
+                    const startLocation = getRandomLocation();
+                    
+                    const vehicleIcon = L.divIcon({
+                        html: `<div class="vehicle-icon">${vehicle.icon}</div>`,
+                        className: 'vehicle-marker',
+                        iconSize: [28, 28],
+                        iconAnchor: [14, 14]
+                    });
+
+                    const marker = L.marker(startLocation.coords, { icon: vehicleIcon }).addTo(map)
+                        .bindPopup(`Driver #${i+1} - ${vehicle.name}`);
+                    
+                    drivers.push({
+                        id: i + 1,
+                        marker: marker,
+                        isAvailable: true,
+                        location: startLocation.coords,
+                        type: vehicleTypeKey
+                    });
+                }
+            }
+            
+            // Animates available drivers by moving them randomly.
+            function animateDrivers() {
+                drivers.forEach(driver => {
+                    if (driver.isAvailable) {
+                        const [lat, lng] = driver.location;
+                        const newLat = lat + (Math.random() - 0.5) * 0.05;
+                        const newLng = lng + (Math.random() - 0.5) * 0.05;
+                        driver.marker.setLatLng([newLat, newLng]);
+                        driver.location = [newLat, newLng];
+                    }
+                });
+            }
+
+            // Handles the ride booking process.
+            async function handleRideRequest() {
+                requestBtn.disabled = true;
+                requestBtn.textContent = 'Finding a ride...';
+                statusLog.innerHTML = '';
+
+                const pickupName = pickupSelect.value;
+                const dropoffName = dropoffSelect.value;
+                const vehicleTypeKey = vehicleSelect.value;
+                
+                if (pickupName === dropoffName) {
+                    logStatus('Pickup and drop-off locations cannot be the same.', 'error');
+                    resetRequestButton();
+                    return;
+                }
+
+                logStatus(`Requesting a ${vehicleTypeKey} from ${pickupName} to ${dropoffName}.`);
+                await sleep(1500);
+
+                const pickupCoords = LOCATIONS[pickupName];
+                const dropoffCoords = LOCATIONS[dropoffName];
+                
+                // Show the pickup and dropoff markers
+                pickupMarker.setLatLng(pickupCoords).setOpacity(1);
+                dropoffMarker.setLatLng(dropoffCoords).setOpacity(1);
+                map.fitBounds([pickupCoords, dropoffCoords], { padding: [50, 50] });
+
+                const availableDriver = findNearestDriver(pickupCoords, vehicleTypeKey);
+
+                if (!availableDriver) {
+                    logStatus(`No ${vehicleTypeKey}s available right now. Please try again later.`, 'error');
+                    resetRequestButton();
+                    return;
+                }
+                
+                const vehicle = VEHICLE_TYPES[availableDriver.type];
+                logStatus(`Driver #${availableDriver.id} (${vehicle.name}) found! Assigning to you.`);
+                availableDriver.isAvailable = false;
+                availableDriver.marker.setIcon(L.divIcon({
+                    html: `<div class="vehicle-icon">${vehicle.assignedIcon}</div>`,
+                    className: 'vehicle-marker', iconSize: [28, 28], iconAnchor: [14, 14]
+                }));
+
+                await simulateTrip(availableDriver, pickupCoords, dropoffCoords, pickupName, dropoffName);
+                
+                // Reset driver state and markers after trip
+                availableDriver.isAvailable = true;
+                availableDriver.marker.setIcon(L.divIcon({
+                    html: `<div class="vehicle-icon">${vehicle.icon}</div>`,
+                    className: 'vehicle-marker', iconSize: [28, 28], iconAnchor: [14, 14]
+                }));
+                pickupMarker.setOpacity(0);
+                dropoffMarker.setOpacity(0);
+                resetRequestButton();
+            }
+
+            // Simulates the entire trip with real-time marker movement.
+            async function simulateTrip(driver, pickupCoords, dropoffCoords, pickupName, dropoffName) {
+                logStatus(`Driver #${driver.id} is heading to ${pickupName}.`);
+                await moveMarker(driver.marker, pickupCoords);
+                logStatus(`Driver has arrived. Your trip to ${dropoffName} is starting.`);
+                await sleep(1000);
+
+                await moveMarker(driver.marker, dropoffCoords);
+                driver.location = dropoffCoords;
+
+                const vehicle = VEHICLE_TYPES[driver.type];
+                const distance = getDistance(pickupCoords, dropoffCoords);
+                const fare = vehicle.base + (distance * vehicle.rate);
+                logStatus(`Trip completed! Distance: ${distance.toFixed(2)} km.`, 'success');
+                logStatus(`Total Fare: ₹${fare.toFixed(2)}`, 'success');
+            }
+
+            // Finds the nearest available driver of the selected vehicle type.
+            function findNearestDriver(coords, vehicleType) {
+                let nearestDriver = null;
+                let minDistance = Infinity;
+
+                drivers.forEach(driver => {
+                    if (driver.isAvailable && driver.type === vehicleType) {
+                        const distance = getDistance(driver.location, coords);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            nearestDriver = driver;
+                        }
+                    }
+                });
+                return nearestDriver;
+            }
+
+            // Updates the fare estimate based on selected locations and vehicle type.
+            function updateFareEstimate() {
+                const pickupName = pickupSelect.value;
+                const dropoffName = dropoffSelect.value;
+                const vehicleTypeKey = vehicleSelect.value;
+                
+                if (!pickupName || !dropoffName || !vehicleTypeKey || pickupName === dropoffName) {
+                    estimateAmountEl.textContent = '0.00';
+                    return;
+                }
+
+                const pickupCoords = LOCATIONS[pickupName];
+                const dropoffCoords = LOCATIONS[dropoffName];
+                const vehicle = VEHICLE_TYPES[vehicleTypeKey];
+                const distance = getDistance(pickupCoords, dropoffCoords);
+                const fare = vehicle.base + (distance * vehicle.rate);
+                estimateAmountEl.textContent = fare.toFixed(2);
+            }
+
+            // Resets the ride request button state.
+            function resetRequestButton() {
+                requestBtn.disabled = false;
+                requestBtn.textContent = 'Request Ride';
+            }
+
+            // Gets a random location from the list.
+            function getRandomLocation() {
+                const locationNames = Object.keys(LOCATIONS);
+                const randomName = locationNames[Math.floor(Math.random() * locationNames.length)];
+                return { name: randomName, coords: LOCATIONS[randomName] };
+            }
+
+            // Calculates the distance between two geographical coordinates (Haversine formula).
+            function getDistance(coords1, coords2) {
+                const R = 6371; // Earth's radius in km
+                const dLat = (coords2[0] - coords1[0]) * Math.PI / 180;
+                const dLon = (coords2[1] - coords1[1]) * Math.PI / 180;
+                const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(coords1[0] * Math.PI / 180) * Math.cos(coords2[0] * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                return R * c;
+            }
+
+            // A helper function for asynchronous delays.
+            function sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            // Smoothly moves a Leaflet marker to a new location.
+            async function moveMarker(marker, toCoords) {
+                const fromCoords = marker.getLatLng();
+                const distance = getDistance([fromCoords.lat, fromCoords.lng], toCoords);
+                const speed = 0.05; // km per millisecond, simulating a decent city speed
+                const duration = distance / speed; 
+                const frames = 100;
+                const latStep = (toCoords[0] - fromCoords.lat) / frames;
+                const lngStep = (toCoords[1] - fromCoords.lng) / frames;
+
+                for (let i = 0; i < frames; i++) {
+                    marker.setLatLng([fromCoords.lat + latStep * i, fromCoords.lng + lngStep * i]);
+                    await sleep(duration / frames);
+                }
+                 marker.setLatLng(toCoords); // Ensure the marker is exactly at the final destination
+            }
+            
+            init();
+        });
+    </script>
+</body>
+</html>
